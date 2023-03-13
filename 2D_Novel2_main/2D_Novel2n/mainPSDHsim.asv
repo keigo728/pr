@@ -1,0 +1,209 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  デジタルホログラフィ：記録と再生のシミュレーション
+%%%  記録：画像を読み込んで、距離ｚだけフレネル変化し、平面波と干渉させて干渉縞を求める
+%%%  再生：位相項を掛けるフレネル変換により再生する
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+clear all;	close all;	disp('  =====  START  =====');
+global SVFOLDER
+global SVF
+
+%%% 設定
+DHinit;
+
+%  【物体波】
+DHinit_input;	% 入力画像
+
+N = initSet.CCDX; % N*Nの画像
+
+%[obj,i] = objectSearch_v2(datafile, initSet);
+im = double(imread([datafile.FOLDER datafile.name1]))/255;
+
+tic
+
+oct = 0; fct = 0;
+for ox = 1:2:1080
+    for oy = 1:2:1920
+        count = 0;
+        i = 1;
+        on(4,2) = 0;
+        for cx = ox:ox+1
+            for cy = oy:oy+1
+                if im(cx, cy) ~= 0
+                    count = count + 1;
+                    on(i,:) = [ox,oy];
+                end
+                i = i + 1;
+            end
+        end
+        if count > 0 && count < 4
+            for j = 1:count
+                oct = oct + 1;
+                obj(oct,:) = on(j,:);
+            end
+        end        
+        if count == 4
+            fct = fct + 1;
+            four(fct,:) = on(1,:); %左上の座標
+        end
+    end
+end
+
+toc
+
+
+oct
+fct
+
+
+
+%[oy, ox] = find(im);
+%obj = [ox,oy];
+%i = numel(oy);
+
+
+
+
+%holo = 0;
+%for i = 1:4
+%    cgh{i} = 0;
+%end
+flag = -1;
+
+
+%k = 50;
+%l = 50;
+
+Zobj = 0.05;
+
+Nwave = novelWave(Zobj, initSet, 'novel'); %中心の物体光の計算
+
+    		showWaveRealImagAbsAngle( Nwave.WAVE, 'novelWave' );
+
+Nwave2 = novelWave(Zobj, initSet, 'novel'); %中心の物体光の計算
+
+    		showWaveRealImagAbsAngle( Nwave2.WAVE, 'novelWave' );
+
+
+            tic
+
+            Opwave.WAVE = moveWave_v2(Nwave, initSet, 'obj', obj, i);
+            Opwave.WAVE = moveWave_v2(Nwave, initSet, 'obj', obj, i);
+            toc
+
+%            [obj,i] = objectSearch_v2_2(datafile, initSet);
+
+%Zobj = 0.03;
+
+ %           Nwave = novelWave(Zobj, initSet, 'novel'); %中心の物体光の計算
+
+  %  		showWaveRealImagAbsAngle( Nwave.WAVE, 'novelWave' );
+
+
+   %         tic
+
+    %        Opwave.WAVE = Opwave.WAVE + moveWave_v2(Nwave, initSet, 'obj', obj, i);
+
+     %       toc
+
+%//////////////////////////for n = 1:i
+%            Onewave = moveWave(Nwave, initSet, 'obj', k, l);
+%            if flag < 0
+%                Opwave = Onewave;
+%                flag = 1;
+%            else
+%                Opwave.WAVE = Opwave.WAVE + Onewave.WAVE;
+%            end
+%        end
+%    end
+%end
+
+
+
+%for k = 1:N
+%    for l = 1:N
+%        [Onewave, initSet.INPUT_IM_SIZE] = objectWave( datafile, Zobj, initSet, 'obj', k, l);
+%        
+%        if initSet.INPUT_IM_SIZE > 0
+%            
+%            if flag < 0
+%                Opwave = Onewave;
+%                flag = 1;
+%            else
+%                Opwave.WAVE = Opwave.WAVE + Onewave.WAVE;
+%            end
+%        end
+%    end
+%end
+
+
+Opwave.Z = Nwave.Z;
+Opwave.WAVE = fliplr(Opwave.WAVE);
+Opwave.WAVE = flipud(Opwave.WAVE);
+Opwave.WAVE = Opwave.WAVE / max(abs(Opwave.WAVE(:)));
+    		showWaveRealImagAbsAngle( Opwave.WAVE, 'objWave' );
+            
+
+            % 【参照波】
+            DHinit_REF;
+            Rwave = selectWaveType( Rwave, initSet, 'ref');
+
+            Imax=-1;
+            for i = 1:4
+
+                %【物体波】と【参照波】との干渉
+                [psholo{i}, Zr, Imax] = interferOxR( Opwave, Rwave, initSet, Imax, i-1);
+	            
+%                if flag < 0
+%                    cgh{i} = psholo{i};
+%                    flag = 1;
+%                else
+%                    cgh{i} = cgh{i} + psholo{i};
+%                end
+
+
+                %%% 位相シフト
+                Rwave.WAVE = Rwave.WAVE * exp(1i * (pi/2) );
+	
+            end
+
+            % 画像読み込みバージョン
+holo = phaseShiftDH(initSet);	% 位相シフト法
+
+%showWaveAmpPhsRecoAmpPhs(holo, 0);
+
+%[cx, cy] = size(holo);
+
+%Icmax = 1.5 * max(cgh{1}(:));
+
+%for i = 1:4
+%    filename = sprintf('%s%sOR%02d.tif', SVFOLDER, SVF, i+3);
+%    imwrite( uint8(255*cgh{i}/Icmax), filename, 'tif');
+%end
+
+
+%------------------------------------------------------------------
+%2^nの形にして再生する
+%--------------------------------------------------------------
+T = 2048;
+Dx = 1920;
+Dy = 1080;
+
+temp = zeros(T, T);
+temp(T/2-Dy/2+1:T/2+Dy/2, T/2-Dx/2+1:T/2+Dx/2) = holo;
+holo = temp;
+
+temp = zeros(T, T);
+temp(T/2-Dy/2+1:T/2+Dy/2, T/2-Dx/2+1:T/2+Dx/2) = Rwave.spatialShiftPhase;
+Rwave.spatialShiftPhase = temp;
+
+%====================================================================
+
+
+
+reconstruction( holo, Rwave, -0.05, initSet );	% 再生
+%reconstruction( holo, Rwave, -0.03, initSet );	% 再生
+%reconstruction( holo, Rwave, -0.08, initSet );	% 再生
+
+% 確認
+% holoA = (psholo{4} - psholo{2}) + 1i * (psholo{1} - psholo{3});	% 位相シフト法
+% reconstruction( holoA, Rwave, -Zr, initSet );	% 再生
